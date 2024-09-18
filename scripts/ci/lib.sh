@@ -156,6 +156,42 @@ get_central_debug_dump() {
     ls -l "${output_dir}"
 }
 
+process_central_metrics() {
+    info "Processing metrics from central debug dump"
+
+    if [[ "$#" -ne 1 ]]; then
+        die "missing arg. usage: process_central_metrics <debug_dump_dir>"
+    fi
+
+    local output_dir="$1"
+
+    local metrics_output
+    local csv_output
+    local debug_dump_zip
+    metrics_output="$(mktemp --suffix=.prom)"
+    csv_output="$(mktemp --suffix=.csv)"
+    # shellcheck disable=SC2012
+    debug_dump_zip="$(ls -t "${output_dir}"/*.zip | head -1)"
+    unzip -p "${debug_dump_zip}" metrics-1 > "${metrics_output}"
+
+    get_prometheus_metrics_parser
+
+    # We need a link to repository. In case it's not part of job spec (e.g., periodic`s)
+    # we will fallback to short commit
+    base_link="$(echo "$JOB_SPEC" | jq ".refs.base_link | select( . != null )" -r)"
+    calculated_base_link="https://github.com/stackrox/stackrox/commit/$(make --quiet --no-print-directory shortcommit)"
+
+    local metadata="build_tag=${STACKROX_BUILD_TAG:-none},build_id=${BUILD_ID:-none},orchestrator_flavor=${ORCHESTRATOR_FLAVOR:-PROW},job_name=${JOB_NAME:-missing},base_link=${base_link:-$calculated_base_link}"
+    prometheus-metric-parser single \
+        --format csv \
+        --file "${metrics_output}" \
+        --labels "${metadata}" \
+        > "${csv_output}"
+
+    setup_gcp
+    save_central_metrics "${csv_output}"
+}
+
 get_prometheus_metrics_parser() {
     local parserBin
     local parserDir
@@ -863,7 +899,7 @@ check_collector_version() {
 }
 
 publish_roxctl() {
- if [[ "$#" -ne 1 ]]; then
+    if [[ "$#" -ne 1 ]]; then
         die "missing arg. usage: publish_roxctl <tag>"
     fi
 
@@ -873,9 +909,24 @@ publish_roxctl() {
 
     local temp_dir
     temp_dir="$(mktemp -d)"
-    "${SCRIPTS_ROOT}/scripts/ci/roxctl-publish/prepare.sh" . "${temp_dir}"
-    "${SCRIPTS_ROOT}/scripts/ci/roxctl-publish/publish.sh" "${temp_dir}" "${tag}" "gs://sr-roxc"
-    "${SCRIPTS_ROOT}/scripts/ci/roxctl-publish/publish.sh" "${temp_dir}" "${tag}" "gs://rhacs-openshift-mirror-src/assets"
+    "${SCRIPTS_ROOT}/scripts/ci/artifacts-publish/prepare-roxctl.sh" . "${temp_dir}"
+    "${SCRIPTS_ROOT}/scripts/ci/artifacts-publish/publish.sh" "${temp_dir}" "${tag}" "gs://sr-roxc"
+    "${SCRIPTS_ROOT}/scripts/ci/artifacts-publish/publish.sh" "${temp_dir}" "${tag}" "gs://rhacs-openshift-mirror-src/assets"
+}
+
+publish_openapispec() {
+    if [[ "$#" -ne 1 ]]; then
+        die "missing arg. usage: publish_openapispec <tag>"
+    fi
+
+    local tag="$1"
+
+    echo "Push OpenAPI spec to gs://rhacs-openshift-mirror-src/assets" >> "${GITHUB_STEP_SUMMARY}"
+
+    local temp_dir
+    temp_dir="$(mktemp -d)"
+    "${SCRIPTS_ROOT}/scripts/ci/artifacts-publish/prepare-openapispec.sh" "${temp_dir}" "${tag}"
+    "${SCRIPTS_ROOT}/scripts/ci/artifacts-publish/publish.sh" "${temp_dir}" "${tag}" "gs://rhacs-openshift-mirror-src/openapi-spec"
 }
 
 push_helm_charts() {

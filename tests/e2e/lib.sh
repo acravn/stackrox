@@ -152,7 +152,6 @@ export_test_environment() {
     ci_export ROX_DECLARATIVE_CONFIGURATION "${ROX_DECLARATIVE_CONFIGURATION:-true}"
     ci_export ROX_COMPLIANCE_ENHANCEMENTS "${ROX_COMPLIANCE_ENHANCEMENTS:-true}"
     ci_export ROX_POLICY_CRITERIA_MODAL "${ROX_POLICY_CRITERIA_MODAL:-true}"
-    ci_export ROX_POLICY_VIOLATIONS_ADVANCED_FILTERS "${ROX_POLICY_VIOLATIONS_ADVANCED_FILTERS:-true}"
     ci_export ROX_TELEMETRY_STORAGE_KEY_V1 "DISABLED"
     ci_export ROX_SCANNER_V4 "${ROX_SCANNER_V4:-false}"
     ci_export ROX_AUTH_MACHINE_TO_MACHINE "${ROX_AUTH_MACHINE_TO_MACHINE:-true}"
@@ -160,6 +159,10 @@ export_test_environment() {
     ci_export ROX_COMPLIANCE_REPORTING "${ROX_COMPLIANCE_REPORTING:-true}"
     ci_export ROX_REGISTRY_RESPONSE_TIMEOUT "${ROX_REGISTRY_RESPONSE_TIMEOUT:-90s}"
     ci_export ROX_REGISTRY_CLIENT_TIMEOUT "${ROX_REGISTRY_CLIENT_TIMEOUT:-120s}"
+    ci_export ROX_SCAN_SCHEDULE_REPORT_JOBS "${ROX_SCAN_SCHEDULE_REPORT_JOBS:-true}"
+    ci_export ROX_PLATFORM_COMPONENTS "${ROX_PLATFORM_COMPONENTS:-true}"
+    ci_export ROX_NVD_CVSS "${ROX_NVD_CVSS_UI:-true}"
+    ci_export ROX_CLUSTERS_PAGE_MIGRATION_UI "${ROX_CLUSTERS_PAGE_MIGRATION_UI:-true}"
 
     if is_in_PR_context && pr_has_label ci-fail-fast; then
         ci_export FAIL_FAST "true"
@@ -292,7 +295,13 @@ deploy_central_via_operator() {
     customize_envVars+=$'\n        value: "true"'
     customize_envVars+=$'\n      - name: ROX_WORKLOAD_CVES_FIXABILITY_FILTERS'
     customize_envVars+=$'\n        value: "true"'
-    customize_envVars+=$'\n      - name: ROX_POLICY_VIOLATIONS_ADVANCED_FILTERS'
+    customize_envVars+=$'\n      - name: ROX_SCAN_SCHEDULE_REPORT_JOBS'
+    customize_envVars+=$'\n        value: "true"'
+    customize_envVars+=$'\n      - name: ROX_PLATFORM_COMPONENTS'
+    customize_envVars+=$'\n        value: "true"'
+    customize_envVars+=$'\n      - name: ROX_NVD_CVSS_UI'
+    customize_envVars+=$'\n        value: "true"'
+    customize_envVars+=$'\n      - name: ROX_CLUSTERS_PAGE_MIGRATION_UI'
     customize_envVars+=$'\n        value: "true"'
 
     CENTRAL_YAML_PATH="tests/e2e/yaml/central-cr.envsubst.yaml"
@@ -891,6 +900,13 @@ remove_existing_stackrox_resources() {
     (
         # Delete StackRox CRs first to give the operator a chance to properly finish the resource cleanup.
         if [[ "${securedclusters_supported}" == "true" ]]; then
+            # Remove stackrox.io/pause-reconcile annotation since it prevents
+            # deletion of secured cluster in static clusters
+            kubectl annotate -n stackrox \
+            securedclusters.platform.stackrox.io \
+            stackrox-secured-cluster-services \
+            stackrox.io/pause-reconcile-
+
             kubectl get securedclusters -o name | while read -r securedcluster; do
                 kubectl -n "${namespace}" delete --ignore-not-found --wait "${securedcluster}"
                 # Wait until resources are actually deleted.
@@ -898,6 +914,13 @@ remove_existing_stackrox_resources() {
             done
         fi
         if [[ "${centrals_supported}" == "true" ]]; then
+            # Remove stackrox.io/pause-reconcile annotation since it prevents
+            # deletion of central in static clusters
+               kubectl annotate -n stackrox \
+                centrals.platform.stackrox.io \
+                stackrox-central-services \
+                stackrox.io/pause-reconcile-
+
             kubectl get centrals -o name | while read -r central; do
                 kubectl -n "${namespace}" delete --ignore-not-found --wait "${central}"
                 kubectl wait -n "${namespace}"  --for=delete deployment/central --timeout=60s
@@ -1111,7 +1134,7 @@ _record_build_info() {
     local build_info
 
     local metadata_url="https://${API_ENDPOINT}/v1/metadata"
-    releaseBuild="$(curl -skS -u "admin:${ROX_PASSWORD}" "${metadata_url}" | jq -r '.releaseBuild')"
+    releaseBuild="$(curl -skS --config <(curl_cfg user "admin:${ROX_PASSWORD}") "${metadata_url}" | jq -r '.releaseBuild')"
 
     if [[ "$releaseBuild" == "true" ]]; then
         build_info="release"
@@ -1214,6 +1237,18 @@ _EO_DETAILS_
         save_junit_failure "${images_available[@]}" "${build_details}"
     fi
 
+    case "$CI_JOB_NAME" in
+    *gke-upgrade-tests)
+        record_upgrade_test_progess
+        ;;
+    *operator-e2e-tests)
+        check_deployment=false
+        ;;
+    *)
+        info "No job specific progress markers are saved for: ${CI_JOB_NAME}"
+        ;;
+    esac
+
     if $check_deployment; then
         if [[ -f "${STATE_DEPLOYED}" ]]; then
             save_junit_success "${stackrox_deployed[@]}"
@@ -1223,19 +1258,6 @@ _EO_DETAILS_
     else
         save_junit_skipped "${stackrox_deployed[@]}"
     fi
-
-    record_job_specific_progress
-}
-
-record_job_specific_progress() {
-    case "$CI_JOB_NAME" in
-    *gke-upgrade-tests)
-        record_upgrade_test_progess
-        ;;
-    *)
-        info "No job specific progress markers are saved for: ${CI_JOB_NAME}"
-        ;;
-    esac
 }
 
 record_upgrade_test_progess() {

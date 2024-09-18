@@ -13,6 +13,7 @@ import (
 	"github.com/stackrox/rox/generated/storage"
 	"github.com/stackrox/rox/pkg/auth/permissions"
 	"github.com/stackrox/rox/pkg/concurrency"
+	"github.com/stackrox/rox/pkg/env"
 	"github.com/stackrox/rox/pkg/logging"
 	ops "github.com/stackrox/rox/pkg/metrics"
 	"github.com/stackrox/rox/pkg/postgres"
@@ -162,7 +163,7 @@ func (s *storeImpl) insertIntoNodes(
 	if err := copyFromNodeComponentCVEEdges(ctx, tx, parts.componentCVEEdges...); err != nil {
 		return err
 	}
-	return copyFromNodeCves(ctx, tx, iTime, parts.vulns...)
+	return insertIntoNodeCves(ctx, tx, iTime, parts.vulns...)
 }
 
 func getPartsAsSlice(parts *common.NodeParts) *nodePartsAsSlice {
@@ -312,7 +313,42 @@ func copyFromNodeComponentEdges(ctx context.Context, tx *postgres.Tx, nodeID str
 	return nil
 }
 
-func copyFromNodeCves(ctx context.Context, tx *postgres.Tx, iTime time.Time, objs ...*storage.NodeCVE) error {
+func insertIntoNodeCves(ctx context.Context, tx *postgres.Tx, iTime time.Time, objs ...*storage.NodeCVE) error {
+	ids := set.NewStringSet()
+	for _, obj := range objs {
+		ids.Add(obj.GetId())
+	}
+	existingCVEs, err := getCVEs(ctx, tx, ids.AsSlice())
+	if err != nil {
+		return err
+	}
+
+	for _, obj := range objs {
+		if storedCVE := existingCVEs[obj.GetId()]; storedCVE != nil {
+			obj.Snoozed = storedCVE.GetSnoozed()
+			obj.CveBaseInfo.CreatedAt = storedCVE.GetCveBaseInfo().GetCreatedAt()
+			obj.SnoozeStart = storedCVE.GetSnoozeStart()
+			obj.SnoozeExpiry = storedCVE.GetSnoozeExpiry()
+			obj.Orphaned = false
+			obj.OrphanedTime = nil
+		} else {
+			obj.CveBaseInfo.CreatedAt = protocompat.ConvertTimeToTimestampOrNil(&iTime)
+		}
+	}
+
+	err = copyFromNodeCves(ctx, tx, objs...)
+	if err != nil {
+		return err
+	}
+
+	if !env.OrphanedCVEsKeepAlive.BooleanSetting() {
+		return removeOrphanedNodeCVEs(ctx, tx)
+	}
+
+	return markOrphanedNodeCVEs(ctx, tx)
+}
+
+func copyFromNodeCves(ctx context.Context, tx *postgres.Tx, objs ...*storage.NodeCVE) error {
 	inputRows := [][]interface{}{}
 
 	var err error
@@ -336,25 +372,7 @@ func copyFromNodeCves(ctx context.Context, tx *postgres.Tx, iTime time.Time, obj
 		"serialized",
 	}
 
-	ids := set.NewStringSet()
-	for _, obj := range objs {
-		ids.Add(obj.GetId())
-	}
-	existingCVEs, err := getCVEs(ctx, tx, ids.AsSlice())
-	if err != nil {
-		return err
-	}
-
 	for idx, obj := range objs {
-		if storedCVE := existingCVEs[obj.GetId()]; storedCVE != nil {
-			obj.Snoozed = storedCVE.GetSnoozed()
-			obj.CveBaseInfo.CreatedAt = storedCVE.GetCveBaseInfo().GetCreatedAt()
-			obj.SnoozeStart = storedCVE.GetSnoozeStart()
-			obj.SnoozeExpiry = storedCVE.GetSnoozeExpiry()
-		} else {
-			obj.CveBaseInfo.CreatedAt = protocompat.ConvertTimeToTimestampOrNil(&iTime)
-		}
-
 		serialized, marshalErr := obj.MarshalVT()
 		if marshalErr != nil {
 			return marshalErr
@@ -398,7 +416,7 @@ func copyFromNodeCves(ctx context.Context, tx *postgres.Tx, iTime time.Time, obj
 			inputRows = inputRows[:0]
 		}
 	}
-	return removeOrphanedNodeCVEs(ctx, tx)
+	return nil
 }
 
 func copyFromNodeComponentCVEEdges(ctx context.Context, tx *postgres.Tx, objs ...*storage.NodeComponentCVEEdge) error {
@@ -470,6 +488,36 @@ func removeOrphanedNodeCVEs(ctx context.Context, tx *postgres.Tx) error {
 		return err
 	}
 	return nil
+}
+
+func markOrphanedNodeCVEs(ctx context.Context, tx *postgres.Tx) error {
+	defer metrics.SetPostgresOperationDurationTime(time.Now(), ops.GetMany, "NodeCVEs")
+
+	iTime := time.Now()
+	rows, err := tx.Query(ctx, "SELECT serialized FROM "+nodeCVEsTable+" WHERE orphaned = 'false' AND not exists (select "+componentCVEEdgesTable+".nodecveid from "+componentCVEEdgesTable+" where "+nodeCVEsTable+".id = "+componentCVEEdgesTable+".nodecveid)")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	orphanedNodeCVEs := make([]*storage.NodeCVE, 0)
+	ids := set.NewStringSet()
+	for rows.Next() {
+		var data []byte
+		if err := rows.Scan(&data); err != nil {
+			return err
+		}
+		msg := &storage.NodeCVE{}
+		if err := msg.UnmarshalVTUnsafe(data); err != nil {
+			return err
+		}
+		if ids.Add(msg.GetId()) {
+			msg.Orphaned = true
+			msg.OrphanedTime = protocompat.ConvertTimeToTimestampOrNil(&iTime)
+			orphanedNodeCVEs = append(orphanedNodeCVEs, msg)
+		}
+	}
+
+	return copyFromNodeCves(ctx, tx, orphanedNodeCVEs...)
 }
 
 func (s *storeImpl) isUpdated(ctx context.Context, node *storage.Node) (bool, error) {
@@ -677,7 +725,7 @@ func (s *storeImpl) getFullNode(ctx context.Context, tx *postgres.Tx, nodeID str
 	}
 
 	var node storage.Node
-	if err := node.UnmarshalVT(data); err != nil {
+	if err := node.UnmarshalVTUnsafe(data); err != nil {
 		return nil, false, err
 	}
 	if err := s.populateNode(ctx, tx, &node); err != nil {
@@ -701,7 +749,7 @@ func getNodeComponentEdges(ctx context.Context, tx *postgres.Tx, nodeID string) 
 			return nil, err
 		}
 		msg := &storage.NodeComponentEdge{}
-		if err := msg.UnmarshalVT(data); err != nil {
+		if err := msg.UnmarshalVTUnsafe(data); err != nil {
 			return nil, err
 		}
 		componentIDToEdgeMap[msg.GetNodeComponentId()] = msg
@@ -724,7 +772,7 @@ func getNodeComponents(ctx context.Context, tx *postgres.Tx, componentIDs []stri
 			return nil, err
 		}
 		msg := &storage.NodeComponent{}
-		if err := msg.UnmarshalVT(data); err != nil {
+		if err := msg.UnmarshalVTUnsafe(data); err != nil {
 			return nil, err
 		}
 		idToComponentMap[msg.GetId()] = msg
@@ -747,7 +795,7 @@ func getComponentCVEEdges(ctx context.Context, tx *postgres.Tx, componentIDs []s
 			return nil, err
 		}
 		msg := &storage.NodeComponentCVEEdge{}
-		if err := msg.UnmarshalVT(data); err != nil {
+		if err := msg.UnmarshalVTUnsafe(data); err != nil {
 			return nil, err
 		}
 		componentIDToEdgesMap[msg.GetNodeComponentId()] = append(componentIDToEdgesMap[msg.GetNodeComponentId()], msg)
@@ -937,7 +985,7 @@ func (s *storeImpl) retryableGetNodeMetadata(ctx context.Context, id string) (*s
 	}
 
 	var msg storage.Node
-	if err := msg.UnmarshalVT(data); err != nil {
+	if err := msg.UnmarshalVTUnsafe(data); err != nil {
 		return nil, false, err
 	}
 	return &msg, true, nil
@@ -1065,7 +1113,7 @@ func getCVEs(ctx context.Context, tx *postgres.Tx, cveIDs []string) (map[string]
 			return nil, err
 		}
 		msg := &storage.NodeCVE{}
-		if err := msg.UnmarshalVT(data); err != nil {
+		if err := msg.UnmarshalVTUnsafe(data); err != nil {
 			return nil, err
 		}
 		idToCVEMap[msg.GetId()] = msg

@@ -474,11 +474,12 @@
         "SCANNER_V4_INDEXER_SERVICE",
         "SCANNER_V4_MATCHER_SERVICE",
         "SCANNER_V4_DB_SERVICE",
-        "SCANNER_V4_SERVICE"
+        "SCANNER_V4_SERVICE",
+        "REGISTRANT_SERVICE"
       ],
       "default": "UNKNOWN_SERVICE",
       "description": "- SCANNER_V4_SERVICE: This is used when Scanner V4 is run in combo-mode.",
-      "title": "Next available tag: 17"
+      "title": "Next available tag: 18"
     },
     "storageTraits": {
       "type": "object",
@@ -579,7 +580,8 @@
       "type": "string",
       "enum": [
         "GENERIC",
-        "GITHUB_ACTIONS"
+        "GITHUB_ACTIONS",
+        "KUBE_SERVICE_ACCOUNT"
       ],
       "default": "GENERIC",
       "description": "The type of the auth machine to machine config.\nCurrently supports GitHub actions or any other generic OIDC provider to use for verifying and\nexchanging the token."

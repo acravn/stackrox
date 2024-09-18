@@ -12,6 +12,10 @@ Please avoid adding duplicate information across this changelog and JIRA/doc inp
 ### Added Features
 
 - ROX-25066: Add new external backup integration for non-AWS S3 compatible providers.
+- ROX-25376: Add the release stage property to the `/v1/featureflags` response.
+- ROX-25451: Secured Cluster Auto-Upgrader is now enabled for all kind of clusters.
+- ROX-26124: Added a `--with-database-only` only to diagnostic bundle.
+  - `roxctl central debug download-diagnostics --with-database-only`
 
 ### Removed Features
 
@@ -19,12 +23,23 @@ Please avoid adding duplicate information across this changelog and JIRA/doc inp
   - `roxctl central generate k8s pvc` and `roxctl central generate openshift pvc` no longer have the flags `--name`, `--size`, and `--storage-class`.
   - `roxctl central generate k8s hostpath` and `roxctl central generate openshift hostpath` no longer have the flags `--hostpath`, `--node-selector-key`, and `--node-selector-value`.
 
-### Deprecated Fatures
+### Deprecated Features
+- ROX-25677: The format for specifying durations in JSON requests to
+  `v1/nodecves/suppress`, `v1/clustercves/suppress` and `v1/imagecves/suppress`
+  will be restricted to a [proto JSON format](https://protobuf.dev/programming-guides/proto3/#json:~:text=are%20also%20accepted.-,Duration,-string).
+  Only a numeric value representing seconds (with optional fractional seconds for nanosecond precision)
+  followed by the s suffix will be accepted (e.g., "0.300s", "-5400s", or "9900s").
+  This replaces the current format, which allows a string with a signed sequence of decimal numbers,
+  each with an optional fraction and a unit suffix (e.g., "300ms", "-1.5h", or "2h45m").
+  The currently valid time units "ns", "us" (or "µs"), "ms", "m", and "h" will no longer be supported.
 
 ### Technical Changes
 - ROX-24897: Sensor will now perform TLS checks lazily during delegated scanning instead of when secrets are first discovered, this should reduce Sensor startup time.
   - To revert back to synchronous TLS checks set `ROX_SENSOR_LAZY_TLS_CHECKS` to `false` on Sensor.
 - ROX-23343: The auto-sensing within the Helm charts for detecting OpenShift clusters has been changed to depend on the `project.openshift.io/v1` APIVersion.
+- ROX-22701: Prevent deleting default policies through the API
+
+- ROX-20723: Remove monorepo substructure under `ui/` directory and switch from yarn v1 to npm for package management. Use `npm run` in place of `yarn` commands.
 
 ## [4.5.0]
 

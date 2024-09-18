@@ -16,6 +16,7 @@ import (
 	v1 "github.com/stackrox/rox/generated/api/v1"
 	"github.com/stackrox/rox/generated/storage"
 	pkgCVE "github.com/stackrox/rox/pkg/cve"
+	"github.com/stackrox/rox/pkg/env"
 	"github.com/stackrox/rox/pkg/fixtures"
 	"github.com/stackrox/rox/pkg/fixtures/fixtureconsts"
 	nodeConverter "github.com/stackrox/rox/pkg/nodes/converter"
@@ -134,6 +135,12 @@ func (s *NodeCVEViewTestSuite) createTestClusters() {
 }
 
 func (s *NodeCVEViewTestSuite) SetupSuite() {
+	s.T().Setenv(env.OrphanedCVEsKeepAlive.EnvVar(), "true")
+	if !env.OrphanedCVEsKeepAlive.BooleanSetting() {
+		s.T().Skip("Skip tests when ROX_ORPHANED_CVES_KEEP_ALIVE disabled")
+		s.T().SkipNow()
+	}
+
 	s.ctx = sac.WithAllAccess(context.Background())
 	s.testDB = pgtest.ForT(s.T())
 
@@ -190,7 +197,7 @@ func (s *NodeCVEViewTestSuite) TestGetNodeCVECoreSAC() {
 				assert.NoError(t, err)
 
 				// Wrap cluster filter with sac filter.
-				matchFilter := tc.matchFilter
+				matchFilter := *tc.matchFilter
 				baseNodeMatchFilter := matchFilter.matchNode
 				matchFilter.withNodeFilter(func(node *storage.Node) bool {
 					if sacTC.visibleNodes.Contains(node.GetId()) {
@@ -199,7 +206,7 @@ func (s *NodeCVEViewTestSuite) TestGetNodeCVECoreSAC() {
 					return false
 				})
 
-				expected := s.compileExpectedCVECores(tc.matchFilter)
+				expected := s.compileExpectedCVECores(&matchFilter)
 				assert.Equal(t, len(expected), len(actual))
 				assert.ElementsMatch(t, expected, actual)
 			})
@@ -268,7 +275,7 @@ func (s *NodeCVEViewTestSuite) TestCountNodeCVECoreSAC() {
 				assert.NoError(t, err)
 
 				// Wrap cluster filter with sac filter.
-				matchFilter := tc.matchFilter
+				matchFilter := *tc.matchFilter
 				baseClusterMatchFilter := matchFilter.matchNode
 				matchFilter.withNodeFilter(func(node *storage.Node) bool {
 					if sacTC.visibleNodes.Contains(node.GetId()) {
@@ -277,7 +284,7 @@ func (s *NodeCVEViewTestSuite) TestCountNodeCVECoreSAC() {
 					return false
 				})
 
-				expected := s.compileExpectedCVECores(tc.matchFilter)
+				expected := s.compileExpectedCVECores(&matchFilter)
 				assert.Equal(t, len(expected), actual)
 			})
 		}

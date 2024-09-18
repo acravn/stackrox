@@ -9,8 +9,12 @@ if [[ -z "$ROX_USERNAME" || -z "$ROX_PASSWORD" ]]; then
   source ../../../scripts/k8s/export-basic-auth-creds.sh ../../../deploy/k8s
 fi
 
+curl_cfg() { # Use built-in echo to not expose $2 in the process list.
+  echo -n "$1 = \"${2//[\"\\]/\\&}\""
+}
+
 if [[ -n "$ROX_PASSWORD" ]]; then
-  readarray -t arr < <(curl -sk -u admin:$ROX_PASSWORD ${api_endpoint}/v1/featureflags | jq -cr '.featureFlags[] | {name: .envVar, enabled: .enabled}')
+  readarray -t arr < <(curl -sk --config <(curl_cfg user "admin:$ROX_PASSWORD") ${api_endpoint}/v1/featureflags | jq -cr '.featureFlags[] | {name: .envVar, enabled: .enabled}')
   for i in "${arr[@]}"; do
     name=$(echo $i | jq -rc .name)
     val=$(echo $i | jq -rc .enabled)
@@ -32,7 +36,7 @@ export CYPRESS_ORCHESTRATOR_FLAVOR="${ORCHESTRATOR_FLAVOR}"
 
 if [ $2 == "--spec" ]; then
     if [ $# -ne 3 ]; then
-        echo "usage: yarn cypress-spec <spec-file>"
+        echo "usage: npm run cypress-spec <spec-file>"
         exit 1
     fi
     cypress run --spec "cypress/integration/$3"

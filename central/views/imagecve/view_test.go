@@ -18,7 +18,6 @@ import (
 	"github.com/stackrox/rox/pkg/env"
 	"github.com/stackrox/rox/pkg/fixtures"
 	imageSamples "github.com/stackrox/rox/pkg/fixtures/image"
-	"github.com/stackrox/rox/pkg/mathutil"
 	"github.com/stackrox/rox/pkg/postgres/pgtest"
 	"github.com/stackrox/rox/pkg/protoassert"
 	"github.com/stackrox/rox/pkg/protocompat"
@@ -36,13 +35,15 @@ import (
 )
 
 type testCase struct {
-	desc        string
-	ctx         context.Context
-	q           *v1.Query
-	matchFilter *filterImpl
-	less        lessFunc
-	readOptions views.ReadOptions
-	expectedErr string
+	desc           string
+	ctx            context.Context
+	q              *v1.Query
+	matchFilter    *filterImpl
+	less           lessFunc
+	readOptions    views.ReadOptions
+	expectedErr    string
+	skipCountTests bool
+	testOrder      bool
 }
 
 type lessFunc func(records []*imageCVECoreResponse) func(i, j int) bool
@@ -159,7 +160,11 @@ func (s *ImageCVEViewTestSuite) TestGetImageCVECore() {
 
 			expected := compileExpected(s.testImages, tc.matchFilter, tc.readOptions, tc.less)
 			assert.Equal(t, len(expected), len(actual))
+
 			assert.ElementsMatch(t, expected, actual)
+			if tc.testOrder {
+				assert.Equal(t, expected, actual)
+			}
 
 			if tc.readOptions.SkipGetAffectedImages || tc.readOptions.SkipGetImagesBySeverity {
 				return
@@ -195,7 +200,7 @@ func (s *ImageCVEViewTestSuite) TestGetImageCVECoreSAC() {
 				assert.NoError(t, err)
 
 				// Wrap image filter with sac filter.
-				matchFilter := tc.matchFilter
+				matchFilter := *tc.matchFilter
 				baseImageMatchFilter := matchFilter.matchImage
 				matchFilter.withImageFilter(func(image *storage.Image) bool {
 					if sacTC[image.GetId()] {
@@ -204,7 +209,7 @@ func (s *ImageCVEViewTestSuite) TestGetImageCVECoreSAC() {
 					return false
 				})
 
-				expected := compileExpected(s.testImages, matchFilter, tc.readOptions, tc.less)
+				expected := compileExpected(s.testImages, &matchFilter, tc.readOptions, tc.less)
 				assert.Equal(t, len(expected), len(actual))
 				assert.ElementsMatch(t, expected, actual)
 			})
@@ -264,7 +269,7 @@ func (s *ImageCVEViewTestSuite) TestGetImageIDsSAC() {
 				assert.NoError(t, err)
 
 				// Wrap image filter with sac filter.
-				matchFilter := tc.matchFilter
+				matchFilter := *tc.matchFilter
 				baseImageMatchFilter := matchFilter.matchImage
 				matchFilter.withImageFilter(func(image *storage.Image) bool {
 					if sacTC[image.GetId()] {
@@ -273,7 +278,7 @@ func (s *ImageCVEViewTestSuite) TestGetImageIDsSAC() {
 					return false
 				})
 
-				expectedAffectedImages := compileExpectedAffectedImageIDs(s.testImages, tc.matchFilter)
+				expectedAffectedImages := compileExpectedAffectedImageIDs(s.testImages, &matchFilter)
 				assert.ElementsMatch(t, expectedAffectedImages, actualAffectedImageIDs)
 			})
 		}
@@ -322,6 +327,10 @@ func (s *ImageCVEViewTestSuite) TestGetImageCVECoreWithPagination() {
 
 func (s *ImageCVEViewTestSuite) TestCountImageCVECore() {
 	for _, tc := range s.testCases() {
+		if tc.skipCountTests {
+			continue
+		}
+
 		s.T().Run(tc.desc, func(t *testing.T) {
 			actual, err := s.cveView.Count(sac.WithAllAccess(tc.ctx), tc.q)
 			if tc.expectedErr != "" {
@@ -339,6 +348,10 @@ func (s *ImageCVEViewTestSuite) TestCountImageCVECore() {
 func (s *ImageCVEViewTestSuite) TestCountImageCVECoreSAC() {
 	for _, tc := range s.testCases() {
 		for key, sacTC := range s.sacTestCases() {
+			if tc.skipCountTests {
+				continue
+			}
+
 			s.T().Run(fmt.Sprintf("Image %s %s", key, tc.desc), func(t *testing.T) {
 				testCtxs := testutils.GetNamespaceScopedTestContexts(tc.ctx, s.T(), resources.Image)
 				ctx := testCtxs[key]
@@ -351,7 +364,7 @@ func (s *ImageCVEViewTestSuite) TestCountImageCVECoreSAC() {
 				assert.NoError(t, err)
 
 				// Wrap image filter with sac filter.
-				matchFilter := tc.matchFilter
+				matchFilter := *tc.matchFilter
 				baseImageMatchFilter := matchFilter.matchImage
 				matchFilter.withImageFilter(func(image *storage.Image) bool {
 					if sacTC[image.GetId()] {
@@ -360,7 +373,7 @@ func (s *ImageCVEViewTestSuite) TestCountImageCVECoreSAC() {
 					return false
 				})
 
-				expected := compileExpected(s.testImages, matchFilter, tc.readOptions, tc.less)
+				expected := compileExpected(s.testImages, &matchFilter, tc.readOptions, tc.less)
 				assert.Equal(t, len(expected), actual)
 			})
 		}
@@ -369,6 +382,10 @@ func (s *ImageCVEViewTestSuite) TestCountImageCVECoreSAC() {
 
 func (s *ImageCVEViewTestSuite) TestCountBySeverity() {
 	for _, tc := range s.testCases() {
+		if tc.skipCountTests {
+			continue
+		}
+
 		s.T().Run(tc.desc, func(t *testing.T) {
 			actual, err := s.cveView.CountBySeverity(sac.WithAllAccess(tc.ctx), tc.q)
 			if tc.expectedErr != "" {
@@ -580,6 +597,22 @@ func (s *ImageCVEViewTestSuite) testCases() []testCase {
 						vuln.GetSeverity() == storage.VulnerabilitySeverity_CRITICAL_VULNERABILITY_SEVERITY
 				}),
 		},
+		{
+			desc:           "search all sort by critical severity most first",
+			ctx:            context.Background(),
+			q:              search.NewQueryBuilder().WithPagination(search.NewPagination().AddSortOption(search.NewSortOption(search.CriticalSeverityCount).Reversed(true)).AddSortOption(search.NewSortOption(search.CVE))).ProtoQuery(),
+			matchFilter:    matchAllFilter(),
+			skipCountTests: true,
+			testOrder:      true,
+			less: func(records []*imageCVECoreResponse) func(i, j int) bool {
+				return func(i, j int) bool {
+					if records[i].ImagesWithCriticalSeverity == records[j].ImagesWithCriticalSeverity {
+						return records[i].CVE <= records[j].CVE
+					}
+					return records[i].ImagesWithCriticalSeverity > records[j].ImagesWithCriticalSeverity
+				}
+			},
+		},
 	}
 }
 
@@ -766,7 +799,7 @@ func compileExpected(images []*storage.Image, filter *filterImpl, options views.
 					cveMap[val.CVE] = val
 				}
 
-				val.TopCVSS = mathutil.MaxFloat32(val.GetTopCVSS(), vuln.GetCvss())
+				val.TopCVSS = max(val.GetTopCVSS(), vuln.GetCvss())
 
 				id := cve.ID(val.GetCVE(), image.GetScan().GetOperatingSystem())
 				var found bool

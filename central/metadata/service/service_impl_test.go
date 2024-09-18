@@ -71,7 +71,7 @@ func (s *serviceImplTestSuite) TestTLSChallenge() {
 	s.Require().NoError(err)
 
 	trustInfo := &v1.TrustInfo{}
-	err = trustInfo.UnmarshalVT(resp.GetTrustInfoSerialized())
+	err = trustInfo.UnmarshalVTUnsafe(resp.GetTrustInfoSerialized())
 	s.Require().NoError(err)
 
 	// Verify that additional CAs were received
@@ -101,7 +101,7 @@ func (s *serviceImplTestSuite) TestTLSChallenge_VerifySignatureWithCACert_Should
 	s.Require().NoError(err)
 
 	trustInfo := &v1.TrustInfo{}
-	err = trustInfo.UnmarshalVT(resp.GetTrustInfoSerialized())
+	err = trustInfo.UnmarshalVTUnsafe(resp.GetTrustInfoSerialized())
 	s.Require().NoError(err)
 
 	// Read root CA from response
@@ -195,7 +195,7 @@ func (s *serviceImplTestSuite) TestDatabaseBackupStatus() {
 	s.NoError(err)
 	actual, err := srv.GetDatabaseBackupStatus(ctx, &v1.Empty{})
 	s.NoError(err)
-	protoassert.Equal(s.T(), expected, actual)
+	protoassert.Equal(s.T(), expected.BackupInfo, actual.BackupInfo)
 }
 
 func (s *serviceImplTestSuite) TestGetCentralCapabilities() {

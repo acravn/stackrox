@@ -7,6 +7,7 @@ import useURLPagination from 'hooks/useURLPagination';
 import useURLSearch from 'hooks/useURLSearch';
 
 import { getTableUIState } from 'utils/getTableUIState';
+import { getPaginationParams } from 'utils/searchUtils';
 import ImagesTable, { Image, ImagesTableProps, imageListQuery } from '../Tables/ImagesTable';
 import { VulnerabilitySeverityLabel } from '../../types';
 import TableEntityToolbar, { TableEntityToolbarProps } from '../../components/TableEntityToolbar';
@@ -49,11 +50,7 @@ function ImagesTableContainer({
     }>(imageListQuery, {
         variables: {
             query: workloadCvesScopedQueryString,
-            pagination: {
-                offset: (page - 1) * perPage,
-                limit: perPage,
-                sortOption,
-            },
+            pagination: getPaginationParams({ page, perPage, sortOption }),
         },
     });
 
@@ -76,7 +73,6 @@ function ImagesTableContainer({
             <Divider component="div" />
             <div
                 className="workload-cves-table-container"
-                role="region"
                 aria-live="polite"
                 aria-busy={loading ? 'true' : 'false'}
             >

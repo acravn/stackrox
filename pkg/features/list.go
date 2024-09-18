@@ -117,9 +117,21 @@ var (
 	// checks will be performed on startup and immediately when secrets are discovered.
 	SensorLazyTLSChecks = registerFeature("Sensor will perform lazy TLS checks instead of immediate", "ROX_SENSOR_LAZY_TLS_CHECKS", enabled)
 
-	// PolicyViolationsAdvancedFilters enables improved filtering capabilities for Policy Violations
-	PolicyViolationsAdvancedFilters = registerFeature("Enables improved filtering capabilities for Policy Violations", "ROX_POLICY_VIOLATIONS_ADVANCED_FILTERS", enabled)
-
 	// PolicyAsCode enables policy definition and lifecycle changes to be managed in external repositories.
-	PolicyAsCode = registerFeature("Enables policy definition and lifecycle changes to be managed in external repositories.", "ROX_POLICY_AS_CODE", unchangeableInProd)
+	PolicyAsCode = registerFeature("Enables policy definition and lifecycle changes to be managed in external repositories.", "ROX_POLICY_AS_CODE")
+
+	// MicrosoftSentinelNotifier enables the Microsoft Sentinel notifier.
+	MicrosoftSentinelNotifier = registerFeature("Enable the Microsoft Sentinel notifier", "ROX_MICROSOFT_SENTINEL")
+
+	// ScanScheduleReportJobs enables support for compliance scan schedule report jobs
+	ScanScheduleReportJobs = registerFeature("Enables support for compliance scan schedule report jobs", "ROX_SCAN_SCHEDULE_REPORT_JOBS")
+
+	// PlatformComponents introduces the concept of platform collections and filtered views across the app.
+	PlatformComponents = registerFeature("Introduce the concept of platform collections and filtered views across the app", "ROX_PLATFORM_COMPONENTS")
+
+	// Display NVD CVSS score in UI.
+	NvdCvssUI = registerFeature("Display NVD CVSS score in UI", "ROX_NVD_CVSS_UI")
+
+	// Display clusters page patternfly redesign.
+	ClustersPageMigrationUI = registerFeature("Display clusters page patternfly redesign", "ROX_CLUSTERS_PAGE_MIGRATION_UI")
 )

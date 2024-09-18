@@ -6,7 +6,7 @@ ARG BASE_IMAGE=ubi8-minimal
 ARG BASE_TAG=latest
 
 
-FROM brew.registry.redhat.io/rh-osbs/openshift-golang-builder:rhel_8_1.21 as builder
+FROM brew.registry.redhat.io/rh-osbs/openshift-golang-builder:rhel_8_1.22 as builder
 
 ENV GOFLAGS=""
 # TODO(ROX-24276): re-enable release builds for fast stream.
@@ -72,6 +72,8 @@ RUN microdnf upgrade --nobest && \
     # contents are then restored by the script `restore-all-dir-contents`
     # during the container start.
     chown -R 65534:65534 /etc/pki/ca-trust /etc/ssl && save-dir-contents /etc/pki/ca-trust /etc/ssl
+
+COPY LICENSE /licenses/LICENSE
 
 # This is equivalent to nobody:nobody.
 USER 65534:65534

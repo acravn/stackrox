@@ -300,6 +300,21 @@
         }
       }
     },
+    "MicrosoftSentinelDataCollectionRuleConfig": {
+      "type": "object",
+      "properties": {
+        "streamName": {
+          "type": "string"
+        },
+        "dataCollectionRuleId": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "description": "DataCollectionRuleConfig contains information about the data collection rule which is a config per notifier type."
+    },
     "NotifierServicePutNotifierBody": {
       "type": "object",
       "properties": {
@@ -345,6 +360,9 @@
         "syslog": {
           "$ref": "#/definitions/storageSyslog"
         },
+        "microsoftSentinel": {
+          "$ref": "#/definitions/storageMicrosoftSentinel"
+        },
         "notifierSecret": {
           "type": "string"
         },
@@ -352,7 +370,7 @@
           "$ref": "#/definitions/storageTraits"
         }
       },
-      "title": "Next Tag: 19"
+      "title": "Next Tag: 21"
     },
     "NotifierServiceUpdateNotifierBody": {
       "type": "object",
@@ -402,6 +420,9 @@
             "syslog": {
               "$ref": "#/definitions/storageSyslog"
             },
+            "microsoftSentinel": {
+              "$ref": "#/definitions/storageMicrosoftSentinel"
+            },
             "notifierSecret": {
               "type": "string"
             },
@@ -409,7 +430,7 @@
               "$ref": "#/definitions/storageTraits"
             }
           },
-          "title": "Next Tag: 19"
+          "title": "Next Tag: 21"
         },
         "updatePassword": {
           "type": "boolean",
@@ -670,6 +691,32 @@
         }
       }
     },
+    "storageMicrosoftSentinel": {
+      "type": "object",
+      "properties": {
+        "logIngestionEndpoint": {
+          "type": "string",
+          "description": "log_ingestion_endpoint is the log ingestion endpoint."
+        },
+        "directoryTenantId": {
+          "type": "string",
+          "description": "directory_tenant_id contains the ID of the Microsoft Directory ID of the selected tenant."
+        },
+        "applicationClientId": {
+          "type": "string",
+          "description": "application_client_id contains the ID of the application ID of the service principal."
+        },
+        "secret": {
+          "type": "string"
+        },
+        "alertDcrConfig": {
+          "$ref": "#/definitions/MicrosoftSentinelDataCollectionRuleConfig"
+        },
+        "auditLogDcrConfig": {
+          "$ref": "#/definitions/MicrosoftSentinelDataCollectionRuleConfig"
+        }
+      }
+    },
     "storageNotifier": {
       "type": "object",
       "properties": {
@@ -718,6 +765,9 @@
         "syslog": {
           "$ref": "#/definitions/storageSyslog"
         },
+        "microsoftSentinel": {
+          "$ref": "#/definitions/storageMicrosoftSentinel"
+        },
         "notifierSecret": {
           "type": "string"
         },
@@ -725,7 +775,7 @@
           "$ref": "#/definitions/storageTraits"
         }
       },
-      "title": "Next Tag: 19"
+      "title": "Next Tag: 21"
     },
     "storagePagerDuty": {
       "type": "object",
